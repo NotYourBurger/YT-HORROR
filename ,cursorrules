@@ -1,0 +1,179 @@
+This is a google colab notebook. Always use the following rules:
+
+
+AI Horror Story Generator Project Brief
+Project Overview
+The AI Horror Story Generator is a full-stack application that automatically creates horror videos by combining AI-generated narration, images, and audio. The system fetches horror stories from Reddit, enhances them for audio narration, converts them to professional-quality voiceovers, generates thematic images, and combines everything into a cinematic horror video.
+Target Audience
+
+Horror content creators
+Podcast producers
+YouTube/TikTok channel owners
+Digital storytellers
+Horror enthusiasts
+
+User Flow
+
+Initialization
+
+User launches the application
+System begins the automated pipeline
+
+
+Story Selection & Enhancement
+
+System fetches horror stories from Reddit (r/nosleep, r/shortscarystories, etc.)
+AI evaluates and selects the most promising story based on narrative strength
+Selected story is enhanced to podcast-style format with improved pacing and atmospheric elements
+
+
+Audio Generation
+
+System converts the enhanced story into a professional voice-over script
+AI voice generation creates realistic narration using specialized horror voice settings
+Audio is processed with appropriate pacing and tonal qualities
+
+
+Visual Content Creation
+
+System generates subtitles from the audio narration
+Story is segmented into scenes
+Each scene is converted into descriptive prompts for image generation
+Stable Diffusion generates thematic horror images for each scene
+
+
+Video Assembly
+
+System aligns generated images with corresponding audio segments
+Transitions, subtle zoom effects, and timing are applied
+Subtitles are added and positioned appropriately
+Optional background music is integrated at appropriate volume levels
+
+
+Output & Delivery
+
+Final video is rendered in 1080p HD format
+All assets (video, audio, images, subtitles) are saved to Google Drive
+System provides links to all generated content
+
+
+
+Technical Pipeline
+1. Story Acquisition & Enhancement
+
+Reddit API Integration: Fetches top stories from horror subreddits
+Story Selection: Uses Gemini AI to evaluate and select stories with cinematic potential
+Content Enhancement: Transforms Reddit posts into podcast-style narration with:
+
+Atmospheric storytelling
+Improved pacing and tension
+Removal of Reddit-specific references
+Enhanced sensory details
+
+
+
+2. Audio Generation
+
+Voice-Over Script Preparation: Formats story for audio narration
+AI Voice Generation: Uses specialized horror-optimized voice settings
+
+Voice: af_bella
+Speed: 0.85 (slower pace for tension building)
+Output: High-quality 24kHz audio file
+
+
+
+3. Subtitle Generation
+
+Speech-to-Text Processing: Uses Whisper model to transcribe narration
+Timestamp Extraction: Creates precise timing for each spoken segment
+SRT File Creation: Generates subtitle file with proper formatting
+
+4. Scene Analysis & Description
+
+Subtitle Segmentation: Divides content into logical scenes
+Scene Description Generation: Uses Gemini AI to create vivid scene descriptions
+
+Focuses on visual atmosphere and lighting
+Highlights key elements and objects
+Describes character actions and appearances
+Captures environmental details and mood
+
+
+
+5. Image Prompt Generation
+
+Prompt Engineering: Converts scene descriptions into optimized Stable Diffusion prompts
+Style Application: Applies cinematic horror style guidance
+Prompt Enhancement: Adds technical details for better image generation
+
+6. Image Generation
+
+Stable Diffusion XL Setup: Initializes optimized model for horror imagery
+Batch Processing: Generates images with:
+
+Resolution: 968x544 (16:9 aspect ratio)
+Quality settings: 25 inference steps, 10.0 guidance scale
+Negative prompts to avoid common generation issues
+
+
+
+7. Video Assembly
+
+Clip Creation: Processes each image with subtle zoom effects
+Transition Application: Adds crossfades between scenes
+Audio Synchronization: Aligns images with corresponding audio segments
+Subtitle Integration: Adds styled subtitles at appropriate screen position
+Audio Mixing: Optionally adds background music at -10dB level
+
+8. Output & Storage
+
+Video Rendering: Creates final MP4 with H.264 encoding
+
+Resolution: 1920x1080
+Bitrate: 4000k
+Quality: CRF 23
+
+
+Asset Management: Saves all generated files to Google Drive in organized folders
+
+Videos
+Images
+Audio
+Subtitles
+Story text
+
+
+
+Technical Requirements
+Development Environment
+
+Python 3.8+
+Google Colab or similar notebook environment
+GPU support for Stable Diffusion
+
+Dependencies
+
+API Access:
+
+Reddit API (PRAW)
+Google Gemini AI
+
+
+AI Models:
+
+Whisper (Speech-to-Text)
+Kokoro (Text-to-Speech)
+Stable Diffusion XL
+Gemini 2.0 Flash
+
+
+Libraries:
+
+praw (Reddit API)
+whisper (Speech recognition)
+diffusers (Stable Diffusion)
+moviepy (Video processing)
+soundfile (Audio processing)
+torch (PyTorch)
+PIL (Image processing)

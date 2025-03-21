@@ -1,0 +1,78 @@
+.navbar {
+  background-color: var(--card-background);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.navbar-brand h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--primary-color);
+}
+
+.navbar-nav {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navbar-nav li {
+  margin-left: 20px;
+  position: relative;
+}
+
+.navbar-nav li a {
+  color: var(--text-color);
+  text-decoration: none;
+  padding: 8px 0;
+  display: block;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.navbar-nav li a:hover {
+  color: var(--primary-color);
+}
+
+.navbar-nav li.active a {
+  color: var(--primary-color);
+}
+
+.navbar-nav li.active::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: var(--primary-color);
+}
+
+@media (max-width: 768px) {
+  .navbar {
+    flex-direction: column;
+    height: auto;
+    padding: 15px;
+  }
+  
+  .navbar-brand {
+    margin-bottom: 15px;
+  }
+  
+  .navbar-nav {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .navbar-nav li {
+    margin: 0 10px 10px;
+  }
+} 
