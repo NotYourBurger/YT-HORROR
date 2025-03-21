@@ -7,7 +7,7 @@ import traceback
 import json
 from IPython.display import display, HTML
 
-# Import functions from pipeline.py
+# Import functions from pipeline.py - avoiding the setup_user_preferences function
 from pipeline import (
     fetch_and_enhance_nosleep_story,
     generate_voice_over_script,
@@ -18,9 +18,13 @@ from pipeline import (
     initialize_stable_diffusion,
     generate_story_images,
     create_final_video,
-    generate_ambient_soundscape,
-    HORROR_SUBREDDITS
+    generate_ambient_soundscape
 )
+
+# Define HORROR_SUBREDDITS here since we're not importing it
+HORROR_SUBREDDITS = ["nosleep", "shortscarystories", "creepypasta", "LetsNotMeet", 
+                     "DarkTales", "TheCrypticCompendium", "libraryofshadows", 
+                     "scarystories", "TrueScaryStories", "HorrorStories"]
 
 # Global variables to store intermediate results
 story_data = None
@@ -62,9 +66,10 @@ def run_pipeline(
         project_folder = os.path.join(base_path, f"story_{timestamp}")
         os.makedirs(project_folder, exist_ok=True)
         
-        # Store user preferences in a global variable to be accessed by pipeline functions
-        global user_prefs
-        user_prefs = {
+        # Create user preferences dictionary directly
+        # This replaces the setup_user_preferences function
+        import pipeline
+        pipeline.user_prefs = {
             'subreddits': {'value': subreddits.split(',')},
             'min_length': {'value': min_length},
             'voice_speed': {'value': voice_speed},
@@ -74,9 +79,8 @@ def run_pipeline(
             'use_dust_overlay': {'value': use_dust_overlay}
         }
         
-        # Update the user_prefs in the pipeline module
-        import pipeline
-        pipeline.user_prefs = user_prefs
+        # Also set HORROR_SUBREDDITS in the pipeline module
+        pipeline.HORROR_SUBREDDITS = HORROR_SUBREDDITS
         
         # 1. Fetch and enhance story (10%)
         progress(0.1, desc="Fetching and enhancing story...")
