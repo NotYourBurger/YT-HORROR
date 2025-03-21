@@ -17,114 +17,17 @@ from tqdm import tqdm
 from PIL import Image, ImageDraw, ImageFont
 
 # ===== CELL 2: API CREDENTIALS AND USER SETTINGS =====
-from IPython.display import HTML, display
-import ipywidgets as widgets
+# Initialize Reddit API
+reddit = praw.Reddit(
+    client_id="Jf3jkA3Y0dBCfluYvS8aVw",
+    client_secret="1dWKIP6ME7FBR66motXS6273rkkf0g",
+    user_agent="Horror Stories by Wear_Severe"
+)
 
-def setup_user_preferences():
-    """Create interactive widgets for user preferences"""
-    # Reddit API credentials (unchanged)
-    reddit = praw.Reddit(
-        client_id="Jf3jkA3Y0dBCfluYvS8aVw",
-        client_secret="1dWKIP6ME7FBR66motXS6273rkkf0g",
-        user_agent="Horror Stories by Wear_Severe"
-    )
-
-    # Initialize Gemini API (unchanged)
-    client = genai.Client(api_key="AIzaSyD_vBSluRNPI6z7JoKfl67M6D3DCq4l0NI")
-
-    # Create user preference widgets
-    style = {'description_width': 'initial'}
-    
-    # Story preferences
-    print("\n=== Story Preferences ===")
-    subreddit_select = widgets.SelectMultiple(
-        options=HORROR_SUBREDDITS,
-        value=['nosleep', 'shortscarystories'],
-        description='Select subreddits:',
-        style=style,
-        layout={'width': 'auto'}
-    )
-    
-    story_length = widgets.IntSlider(
-        value=1000,
-        min=500,
-        max=5000,
-        step=500,
-        description='Minimum story length:',
-        style=style
-    )
-
-    # Voice preferences
-    print("\n=== Voice Preferences ===")
-    voice_speed = widgets.FloatSlider(
-        value=0.85,
-        min=0.5,
-        max=1.2,
-        step=0.05,
-        description='Narration speed:',
-        style=style
-    )
-
-    voice_selection = widgets.Dropdown(
-        options=['af_bella', 'en_joe', 'en_emily'],
-        value='af_bella',
-        description='Narrator voice:',
-        style=style
-    )
-
-    # Video preferences
-    print("\n=== Video Preferences ===")
-    video_quality = widgets.Dropdown(
-        options=[
-            ('High (6000k)', '6000k'),
-            ('Medium (4000k)', '4000k'),
-            ('Low (2000k)', '2000k')
-        ],
-        value='4000k',
-        description='Video quality:',
-        style=style
-    )
-
-    cinematic_ratio = widgets.Dropdown(
-        options=[
-            ('Cinematic (2.35:1)', 2.35),
-            ('Standard (16:9)', 1.77),
-            ('Square (1:1)', 1.0)
-        ],
-        value=2.35,
-        description='Aspect ratio:',
-        style=style
-    )
-
-    use_dust_overlay = widgets.Checkbox(
-        value=True,
-        description='Add dust overlay effect',
-        style=style
-    )
-
-    # Display all widgets
-    display(subreddit_select, story_length)
-    display(voice_speed, voice_selection)
-    display(video_quality, cinematic_ratio, use_dust_overlay)
-
-    # Return user preferences
-    return {
-        'subreddits': subreddit_select,
-        'min_length': story_length,
-        'voice_speed': voice_speed,
-        'voice_selection': voice_selection,
-        'video_quality': video_quality,
-        'cinematic_ratio': cinematic_ratio,
-        'use_dust_overlay': use_dust_overlay
-    }
-
-# Initialize user preferences
-user_prefs = setup_user_preferences()
+# Initialize Gemini API
+client = genai.Client(api_key="AIzaSyD_vBSluRNPI6z7JoKfl67M6D3DCq4l0NI")
 
 # ===== CELL 3: CONSTANTS =====
-# Horror subreddits
-HORROR_SUBREDDITS = ["nosleep", "shortscarystories", "creepypasta", "LetsNotMeet"]
-
 # Horror themes for filtering and prompting
 HORROR_THEMES = [
     "paranormal", "ghost", "haunting", "demon", "possession",
@@ -290,8 +193,8 @@ def generate_horror_audio(story_text, output_dir="audio_output"):
     # Use user-selected voice parameters
     generator = pipeline(
         story_text,
-        voice=user_prefs['voice_selection'].value,
-        speed=user_prefs['voice_speed'].value
+        voice=user_prefs['voice_selection']['value'],
+        speed=user_prefs['voice_speed']['value']
     )
 
     # Generate and concatenate audio segments
@@ -954,10 +857,10 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
                 raise ValueError("No clips to combine")
         
         # Use user-selected video quality
-        video_bitrate = user_prefs['video_quality'].value
+        video_bitrate = user_prefs['video_quality']['value']
         
         # Use user-selected aspect ratio
-        CINEMATIC_RATIO = user_prefs['cinematic_ratio'].value
+        CINEMATIC_RATIO = user_prefs['cinematic_ratio']['value']
         
         # Add subtitles if available - FIXED IMPLEMENTATION
         subtitle_clip = None
@@ -1012,7 +915,7 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
             clips_to_composite.append(subtitle_clip)
         
         # Apply dust overlay based on user preference
-        if user_prefs['use_dust_overlay'].value and dust_overlay is not None:
+        if user_prefs['use_dust_overlay']['value'] and dust_overlay is not None:
             try:
                 print("Applying dust overlay effect...")
                 # Make sure dust overlay matches video dimensions
