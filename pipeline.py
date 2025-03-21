@@ -51,12 +51,12 @@ BG_MUSIC_DB = -17  # Background music level in dB
 # ===== CELL 5: ENHANCED SCRIPT GENERATION (FETCH AND ENHANCE STORY) =====
 def fetch_and_enhance_nosleep_story():
     """Fetch a story from horror subreddits and enhance it into a podcast format with intro/outro"""
-
+    
     # Expanded list of horror subreddits
     horror_subreddits = [
-        "nosleep",
-        "shortscarystories",
-        "creepypasta",
+        "nosleep", 
+        "shortscarystories", 
+        "creepypasta", 
         "LetsNotMeet",
         "DarkTales",
         "TheCrypticCompendium",
@@ -65,11 +65,11 @@ def fetch_and_enhance_nosleep_story():
         "TrueScaryStories",
         "HorrorStories"
     ]
-
+    
     # Randomly select 2-3 subreddits to fetch from
     selected_subreddits = random.sample(horror_subreddits, min(3, len(horror_subreddits)))
     print(f"Fetching stories from: {', '.join(selected_subreddits)}")
-
+    
     # Fetch stories from selected subreddits
     all_posts = []
     for subreddit_name in selected_subreddits:
@@ -81,30 +81,30 @@ def fetch_and_enhance_nosleep_story():
             print(f"Found {len(posts)} stories from r/{subreddit_name}")
         except Exception as e:
             print(f"Error fetching from r/{subreddit_name}: {str(e)}")
-
+    
     # Shuffle posts to randomize selection
     random.shuffle(all_posts)
-
+    
     # Filter out very short posts and previously used posts
     cache_file = "used_story_ids.txt"
     used_ids = set()
-
+    
     # Load previously used story IDs
     if os.path.exists(cache_file):
         with open(cache_file, 'r') as f:
             used_ids = set(line.strip() for line in f.readlines())
-
+    
     # Filter out previously used stories and very short ones
     filtered_posts = [
-        post for post in all_posts
-        if post.id not in used_ids
+        post for post in all_posts 
+        if post.id not in used_ids 
         and len(post.selftext) > 1000  # Ensure story has reasonable length
     ]
-
+    
     if not filtered_posts:
         print("No new stories found, using all available stories")
         filtered_posts = [post for post in all_posts if len(post.selftext) > 1000]
-
+    
     # Take a subset of posts for selection
     selection_posts = filtered_posts[:min(20, len(filtered_posts))]
 
@@ -114,13 +114,13 @@ def fetch_and_enhance_nosleep_story():
     selection_prompt = """
     You are a professional horror story curator. Select ONE story from the following list
     that has the strongest potential for a cinematic narrative. Look for:
-    - Clear narrative structure
-    - Strong character development
+- Clear narrative structure
+- Strong character development
     - Unique and original premise
     - Potential for visual storytelling
     - Atmospheric and sensory-rich content
 
-    Available stories:
+Available stories:
     {titles}
 
     Return only the number of your selection (1-20).
@@ -131,15 +131,15 @@ def fetch_and_enhance_nosleep_story():
         model="gemini-2.0-flash",
         contents=selection_prompt
     ).text
-
+    
     try:
         story_index = int(response.strip()) - 1
         chosen_story = selection_posts[story_index]
-
+        
         # Save this story ID to avoid reusing
         with open(cache_file, 'a') as f:
             f.write(f"{chosen_story.id}\n")
-
+            
         print(f"Selected story: '{chosen_story.title}' from r/{chosen_story.subreddit.display_name}")
     except (ValueError, IndexError) as e:
         # Fallback if parsing fails
@@ -178,7 +178,7 @@ def fetch_and_enhance_nosleep_story():
     - Make the beginning, middle and end clearly distinguishable
     - Replace [Host Name] with a fictional host name that fits a horror podcast
 
-    Original Story: {content}
+Original Story: {content}
     Original Title: {title}
     Source: r/{subreddit}
 
@@ -200,7 +200,7 @@ def fetch_and_enhance_nosleep_story():
     enhanced_story = re.sub(r'\*\*.*?\*\*', '', enhanced_story)  # Remove bold
     enhanced_story = re.sub(r'\*.*?\*', '', enhanced_story)  # Remove italics
     enhanced_story = re.sub(r'\n\s*\n\s*\n', '\n\n', enhanced_story)  # Fix spacing
-
+    
     return {
         'title': chosen_story.title,
         'original': chosen_story.selftext,
@@ -297,104 +297,104 @@ def parse_srt_timestamps(srt_path):
     """Parse SRT file and extract timestamps with text"""
     segments = []
     current_segment = {}
-
+    
     with open(srt_path, 'r', encoding='utf-8') as file:
         lines = file.readlines()
-
+        
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-
+        
         if line.isdigit():  # Segment number
             if current_segment:
                 segments.append(current_segment)
                 current_segment = {}
-
+            
             i += 1
             # Parse timestamp line
             timestamp_line = lines[i].strip()
             start_time, end_time = timestamp_line.split(' --> ')
-
+            
             i += 1
             # Get text (may be multiple lines)
             text = []
             while i < len(lines) and lines[i].strip():
                 text.append(lines[i].strip())
                 i += 1
-
+                
             current_segment = {
                 'start_time': start_time,
                 'end_time': end_time,
                 'text': ' '.join(text)
             }
         i += 1
-
+        
     if current_segment:
         segments.append(current_segment)
-
+        
     return segments
 
 def generate_scene_descriptions(srt_path, delay_seconds=2):
     """Generate cinematic scene descriptions based on subtitle segments"""
     segments = parse_srt_timestamps(srt_path)
     scene_descriptions = []
-
+    
     chunk_size = 2
     max_retries = 3
-
+    
     for i in range(0, len(segments) - chunk_size + 1, chunk_size):
         chunk = segments[i:i + chunk_size]
         combined_text = ' '.join([seg['text'] for seg in chunk])
-
+        
         # Enhanced prompt focusing on visual storytelling and scenario creation
         prompt = f"""
         You are a horror film director. Create a vivid, cinematic scene description for this segment of narration.
-
+        
         NARRATION: "{combined_text}"
-
+        
         Imagine this as a specific moment in a horror film. Describe:
         1. The exact visual scenario that would be filmed (not abstract concepts)
         2. Characters' positions, expressions, and actions
         3. Setting details including lighting, weather, and environment
         4. Camera angle and framing (close-up, wide shot, etc.)
         5. Color palette and visual tone
-
+        
         IMPORTANT:
         - Describe a SINGLE, SPECIFIC moment that could be photographed
         - Focus on what the VIEWER SEES, not what characters think or feel
         - Include specific visual details that create atmosphere
         - Avoid vague descriptions - be concrete and filmable
         - Write in present tense as if describing a film frame
-
+        
         Example: "A woman stands in her dimly lit kitchen, gripping a bloodstained knife. Her face is illuminated only by moonlight streaming through venetian blinds, casting striped shadows across her vengeful expression. In the background, shadowy figures can be seen through a doorway, unaware of her presence. The camera frames her in a low-angle shot, emphasizing her newfound power."
-
+        
         Return ONLY the scene description, no explanations or formatting.
         """
-
+        
         for attempt in range(max_retries):
             try:
                 response = client.models.generate_content(
                     model="gemini-2.0-flash",
                     contents=prompt
                 ).text
-
+                
                 # Clean up the response
                 cleaned_response = (response
                     .replace('**', '')
                     .replace('Scene:', '')
                     .replace('Description:', '')
                     .strip())
-
+                
                 scene_descriptions.append({
                     'start_time': chunk[0]['start_time'],
                     'end_time': chunk[-1]['end_time'],
                     'description': cleaned_response
                 })
-
+                
                 print(f"Generated scene {len(scene_descriptions)}/{(len(segments) - chunk_size + 1)//chunk_size + 1}")
                 time.sleep(delay_seconds)
                 break
-
+                
             except Exception as e:
                 if "429" in str(e):  # Rate limit error
                     if attempt < max_retries - 1:
@@ -412,7 +412,7 @@ def generate_scene_descriptions(srt_path, delay_seconds=2):
                 else:
                     print(f"Error generating scene {len(scene_descriptions) + 1}: {str(e)}")
                     break
-
+    
     return scene_descriptions
 
 
@@ -435,34 +435,34 @@ def generate_image_prompts(scene_descriptions, style="cinematic", delay_seconds=
     prompts = []
     style_desc = STYLE_GUIDANCE.get(style, STYLE_GUIDANCE["cinematic"])
     max_retries = 3
-
+    
     print(f"\nGenerating {len(scene_descriptions)} image prompts...")
-
+    
     for i, scene in enumerate(scene_descriptions):
         prompt_template = f"""
         You are a professional concept artist for horror films. Create a detailed image prompt for Stable Diffusion XL based on this scene description.
-
+        
         SCENE DESCRIPTION: "{scene['description']}"
-
+        
         Your task is to translate this scene into a precise, visual prompt that will generate a striking horror image.
-
+        
         Follow these requirements:
         1. Start with the main subject and their action (e.g., "A pale woman clutching a bloodied photograph")
         2. Describe the exact setting with specific details (e.g., "in an abandoned Victorian nursery with peeling wallpaper")
         3. Specify lighting, atmosphere, and color palette (e.g., "lit only by a single candle, casting long shadows, desaturated blue tones")
         4. Include camera perspective and framing (e.g., "extreme close-up shot, shallow depth of field")
         5. Add these style elements: {style_desc}
-
+        
         IMPORTANT:
         - Be extremely specific and visual - describe exactly what should appear in the image
         - Focus on a single, powerful moment that tells a story
         - Include precise details about expressions, positioning, and environment
         - Use strong visual language that creates mood and atmosphere
         - Keep the prompt under 400 characters but dense with visual information
-
+        
         Return ONLY the prompt text with no explanations or formatting.
         """
-
+        
         # Attempt to generate prompt with retries and delay
         for attempt in range(max_retries):
             try:
@@ -471,20 +471,20 @@ def generate_image_prompts(scene_descriptions, style="cinematic", delay_seconds=
                     model="gemini-2.0-flash",
                     contents=prompt_template
                 ).text
-
+                
                 # Enhance the prompt with standard terms
                 enhanced_prompt = enhance_prompt(response.strip())
-
+                
                 prompts.append({
                     'timing': (scene['start_time'], scene['end_time']),
                     'prompt': enhanced_prompt,
                     'original_description': scene['description']  # Store original for reference
                 })
-
+                
                 print(f"Generated prompt {i+1}/{len(scene_descriptions)}")
                 time.sleep(delay_seconds)  # Add delay between requests
                 break
-
+                
             except Exception as e:
                 if "429" in str(e):  # Resource exhausted error
                     if attempt < max_retries - 1:
@@ -503,7 +503,7 @@ def generate_image_prompts(scene_descriptions, style="cinematic", delay_seconds=
                 else:
                     print(f"Error generating prompt {i+1}: {str(e)}")
                     break
-
+    
     return prompts
 
 
@@ -554,7 +554,7 @@ def auto_generate_image(prompt):
     if sd_pipeline is None:
         print("Initializing Stable Diffusion pipeline...")
         initialize_stable_diffusion()
-
+    
     # Set optimal scheduler for SDXL
     sd_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
         sd_pipeline.scheduler.config,
@@ -570,14 +570,14 @@ def auto_generate_image(prompt):
         "logo, oversaturated, cartoon, 3d render, bad art, amateur, "
         "poorly drawn face, poorly drawn hands, poorly drawn feet"
     )
-
+    
     # Generate a random seed for variety but allow reproducibility
     seed = random.randint(1, 2147483647)
     torch_generator = torch.Generator(device="cuda").manual_seed(seed)
-
+    
     # Aspect ratios optimized for SDXL (using 3:2 for cinematic look)
     width, height = 1024, 680  # 3:2 aspect ratio, optimized for SDXL
-
+    
     # Optimal inference parameters based on SDXL guide
     image = sd_pipeline(
         prompt=prompt,
@@ -601,31 +601,31 @@ def generate_story_images(image_prompts, output_dir="auto_images"):
     # Generate images with progress bar
     image_paths = []
     print(f"\nGenerating {len(image_prompts)} cinematic images...")
-
+    
     for idx, prompt_data in enumerate(image_prompts, 1):
         output_path = os.path.join(output_dir, f"scene_{idx:03d}.png")
-
+        
         # Generate image with multiple attempts if needed
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
                 # Extract the original prompt without enhancements to avoid redundancy
                 base_prompt = prompt_data['prompt']
-
+                
                 # Create a cinematic prompt with optimal structure
                 cinematic_prompt = (
                     f"{base_prompt}, cinematic lighting, dramatic composition, "
                     f"professional photography, film grain, anamorphic lens, "
                     f"depth of field, 8k resolution, hyperdetailed, masterpiece"
                 )
-
+                
                 # Generate the image
                 image = auto_generate_image(cinematic_prompt)
-
+                
                 # Save in high quality
                 image.save(output_path, format="PNG", quality=100)
                 image_paths.append(output_path)
-
+                
                 print(f"Generated image {idx}/{len(image_prompts)} (Attempt {attempt + 1})")
                 break
             except Exception as e:
@@ -634,13 +634,9 @@ def generate_story_images(image_prompts, output_dir="auto_images"):
                 else:
                     print(f"Attempt {attempt + 1} failed, retrying...")
                     time.sleep(2)
-
+    
     print(f"\nSuccessfully generated {len(image_paths)} cinematic images")
     return image_paths
-
-# Generate images using existing prompts from cell 10
-image_paths = generate_story_images(image_prompts)
-
 
 # ===== CELL 13: ENHANCED CINEMATIC VIDEO GENERATION =====
 
@@ -709,7 +705,7 @@ def add_cinematic_black_bars(clip):
     original_width = clip.w
     target_height = int(original_width / CINEMATIC_RATIO)
     bar_height = (original_height - target_height) // 2
-
+    
     # Create black bars
     if bar_height > 0:
         # Create a mask for the visible area
@@ -728,15 +724,15 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
     """Create cinematic video with dust overlay, black bars, and subtle image movements"""
     try:
         print("Starting enhanced cinematic video creation...")
-
+        
         # Create output directory if it doesn't exist
         output_dir = "/content/output"
         os.makedirs(output_dir, exist_ok=True)
-
+        
         # Get audio duration
         audio = AudioFileClip(audio_path)
         total_duration = audio.duration
-
+        
         # Check for dust overlay video
         dust_overlay = None
         dust_overlay_path = "dustoverlay.mov"
@@ -757,7 +753,7 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
 
         # Create clips from images with their specific timings and subtle movements
         video_clips = []
-
+        
         for i, (prompt_data, img_path) in enumerate(zip(image_prompts, image_paths)):
             if not os.path.exists(img_path):
                 continue
@@ -766,11 +762,11 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
             start_time = convert_timestamp_to_seconds(prompt_data['timing'][0])
             end_time = convert_timestamp_to_seconds(prompt_data['timing'][1])
             duration = end_time - start_time
-
+            
             # Add random subtle tilt/rotation to image
             tilt_angle = random.uniform(-2.0, 2.0)  # Random tilt between -2 and 2 degrees
             zoom_factor = random.uniform(1.02, 1.08)  # Random zoom between 2-8%
-
+            
             # Create clip with subtle zoom and rotation
             clip = (ImageClip(img_path)
                    .set_duration(duration)
@@ -778,7 +774,7 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
                    .resize(lambda t: zoom_factor + (0.1 * t/duration))  # Combine base zoom with gradual zoom
                    .rotate(lambda t: tilt_angle, expand=False)  # Apply subtle tilt
                    .set_position('center'))
-
+            
             video_clips.append(clip)
 
         # Add transitions between clips
@@ -787,7 +783,7 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
             if i > 0:
                 # Add crossfade with previous clip
                 clip = clip.crossfadein(1.0)
-            final_clips.append(clip)
+                final_clips.append(clip)
 
         # Combine all clips
         print("Combining video clips...")
@@ -847,7 +843,7 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
                     size=(video.w * 0.7, None),  # Wider text area for Anton
                     align='center'
                 )
-
+                
                 subs = SubtitlesClip(srt_path, generator)
                 video = CompositeVideoClip([
                     video,
@@ -856,19 +852,19 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
             except Exception as e:
                 print(f"Warning: Could not add subtitles: {str(e)}")
 
-        # Add background music if available
-        if os.path.exists("/content/ambient.mp3"):
-            bg_music = (AudioFileClip("/content/ambient.mp3")
-                       .volumex(db_to_amplitude(BG_MUSIC_DB)))
-
-            if bg_music.duration < total_duration:
-                bg_music = afx.audio_loop(bg_music, duration=total_duration)
+            # Add background music if available
+            if os.path.exists("/content/ambient.mp3"):
+                bg_music = (AudioFileClip("/content/ambient.mp3")
+                           .volumex(db_to_amplitude(BG_MUSIC_DB)))
+                
+                if bg_music.duration < total_duration:
+                    bg_music = afx.audio_loop(bg_music, duration=total_duration)
+                else:
+                    bg_music = bg_music.subclip(0, total_duration)
+                
+                final_audio = CompositeAudioClip([audio, bg_music])
             else:
-                bg_music = bg_music.subclip(0, total_duration)
-
-            final_audio = CompositeAudioClip([audio, bg_music])
-        else:
-            final_audio = audio
+                final_audio = audio
 
         video = video.set_audio(final_audio)
 
@@ -891,7 +887,7 @@ def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=N
         audio.close()
         if dust_overlay is not None:
             dust_overlay.close()
-
+        
         print("Cinematic video creation completed successfully.")
         return output_file
 
