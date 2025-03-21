@@ -16,8 +16,8 @@ import time
 from tqdm import tqdm
 from PIL import Image, ImageDraw, ImageFont
 
-# ===== CELL 2: API CREDENTIALS AND USER SETTINGS =====
-# Initialize Reddit API
+# ===== CELL 2: API CREDENTIALS =====
+# Reddit API credentials
 reddit = praw.Reddit(
     client_id="Jf3jkA3Y0dBCfluYvS8aVw",
     client_secret="1dWKIP6ME7FBR66motXS6273rkkf0g",
@@ -27,7 +27,11 @@ reddit = praw.Reddit(
 # Initialize Gemini API
 client = genai.Client(api_key="AIzaSyD_vBSluRNPI6z7JoKfl67M6D3DCq4l0NI")
 
+
 # ===== CELL 3: CONSTANTS =====
+# Horror subreddits
+HORROR_SUBREDDITS = ["nosleep", "shortscarystories", "creepypasta", "LetsNotMeet"]
+
 # Horror themes for filtering and prompting
 HORROR_THEMES = [
     "paranormal", "ghost", "haunting", "demon", "possession",
@@ -41,17 +45,18 @@ HORROR_THEMES = [
 sd_pipeline = None
 
 # Constants for optimization
-BG_MUSIC_DB = -10  # Background music level in dB
+BG_MUSIC_DB = -17  # Background music level in dB
+
 
 # ===== CELL 5: ENHANCED SCRIPT GENERATION (FETCH AND ENHANCE STORY) =====
 def fetch_and_enhance_nosleep_story():
     """Fetch a story from horror subreddits and enhance it into a podcast format with intro/outro"""
-    
+
     # Expanded list of horror subreddits
     horror_subreddits = [
-        "nosleep", 
-        "shortscarystories", 
-        "creepypasta", 
+        "nosleep",
+        "shortscarystories",
+        "creepypasta",
         "LetsNotMeet",
         "DarkTales",
         "TheCrypticCompendium",
@@ -60,112 +65,155 @@ def fetch_and_enhance_nosleep_story():
         "TrueScaryStories",
         "HorrorStories"
     ]
-    
+
     # Randomly select 2-3 subreddits to fetch from
     selected_subreddits = random.sample(horror_subreddits, min(3, len(horror_subreddits)))
-    
+    print(f"Fetching stories from: {', '.join(selected_subreddits)}")
+
     # Fetch stories from selected subreddits
     all_posts = []
     for subreddit_name in selected_subreddits:
         try:
             subreddit = reddit.subreddit(subreddit_name)
+            # Get weekly top posts instead of monthly
             posts = list(subreddit.top("week", limit=30))
             all_posts.extend(posts)
+            print(f"Found {len(posts)} stories from r/{subreddit_name}")
         except Exception as e:
             print(f"Error fetching from r/{subreddit_name}: {str(e)}")
-    
+
     # Shuffle posts to randomize selection
     random.shuffle(all_posts)
-    
+
     # Filter out very short posts and previously used posts
     cache_file = "used_story_ids.txt"
     used_ids = set()
-    
+
+    # Load previously used story IDs
     if os.path.exists(cache_file):
         with open(cache_file, 'r') as f:
             used_ids = set(line.strip() for line in f.readlines())
-    
-    # Use a fixed minimum length instead of user preference
-    min_length = 1000
+
+    # Filter out previously used stories and very short ones
     filtered_posts = [
-        post for post in all_posts 
-        if post.id not in used_ids 
-        and len(post.selftext) > min_length
+        post for post in all_posts
+        if post.id not in used_ids
+        and len(post.selftext) > 1000  # Ensure story has reasonable length
     ]
-    
+
     if not filtered_posts:
-        filtered_posts = [post for post in all_posts if len(post.selftext) > min_length]
-    
+        print("No new stories found, using all available stories")
+        filtered_posts = [post for post in all_posts if len(post.selftext) > 1000]
+
     # Take a subset of posts for selection
     selection_posts = filtered_posts[:min(20, len(filtered_posts))]
 
     # Create a prompt for story selection
-    post_titles = "\n".join([f"{i+1}. {post.title}" for i, post in enumerate(selection_posts)])
+    post_titles = "\n".join([f"{i+1}. {post.title} (r/{post.subreddit.display_name})" for i, post in enumerate(selection_posts)])
 
-    selection_prompt = f"""Select ONE story number (1-{len(selection_posts)}) that has the strongest potential for a horror podcast narrative. Consider:
-- Clear narrative structure
-- Strong character development
-- Unique premise
-- Visual storytelling potential
-- Atmospheric content
+    selection_prompt = """
+    You are a professional horror story curator. Select ONE story from the following list
+    that has the strongest potential for a cinematic narrative. Look for:
+    - Clear narrative structure
+    - Strong character development
+    - Unique and original premise
+    - Potential for visual storytelling
+    - Atmospheric and sensory-rich content
 
-Available stories:
-{post_titles}
+    Available stories:
+    {titles}
 
-Return only the number."""
+    Return only the number of your selection (1-20).
+    """.format(titles=post_titles)
 
-    # Get story selection
+    # Get story selection from Gemini Flash
     response = client.models.generate_content(
         model="gemini-2.0-flash",
         contents=selection_prompt
     ).text
-    
+
     try:
         story_index = int(response.strip()) - 1
         chosen_story = selection_posts[story_index]
-        
-        # Save story ID to avoid reuse
+
+        # Save this story ID to avoid reusing
         with open(cache_file, 'a') as f:
             f.write(f"{chosen_story.id}\n")
-            
+
+        print(f"Selected story: '{chosen_story.title}' from r/{chosen_story.subreddit.display_name}")
     except (ValueError, IndexError) as e:
+        # Fallback if parsing fails
+        print(f"Selection error: {str(e)}. Choosing random story.")
         chosen_story = random.choice(selection_posts)
 
-    # Create enhanced podcast-style prompt that requests only the script text
-    enhancement_prompt = """Transform this story into a voice over script with the following structure:
+    # Create enhanced podcast-style prompt with intro and outro
+    enhancement_prompt = """
+    Transform this horror story into a compelling podcast episode for "The Withering Club" podcast.
+    Create a complete narrative with a clear beginning, middle, and end, following this structure:
 
-1. Start with a powerful hook about the story's theme (2-3 sentences)
-2. Include this intro: "Welcome to The Withering Club, where we explore the darkest corners of human experience. I'm your host, Anna. Before we begin tonight's story, remember that the shadows you see might be watching back. Now, dim the lights and prepare yourself for tonight's tale..."
-3. Tell the story with a clear beginning, middle, and end, focusing on:
-   - Clear narrative flow
-   - Building tension
-   - Natural dialogue
-   - Atmospheric descriptions
-4. End with: "That concludes tonight's tale from The Withering Club. If this story kept you up at night, remember to like, share, and subscribe to join our growing community of darkness seekers. Until next time, remember... the best stories are the ones that follow you home. Sleep well, if you can."
+    1. PODCAST INTRO (30-45 seconds):
+    "Welcome to The Withering Club, where we explore the darkest corners of human experience. I'm your host, [Host Name]. Before we begin tonight's story, remember that the shadows you see might be watching back. Now, dim the lights and prepare yourself for tonight's tale..."
 
-Original Story: {content}
+    2. STORY HOOK (30 seconds):
+    - Start with a powerful, intriguing hook related to the story's theme
+    - Use a universal truth or historical fact that connects to the story
+    - Create immediate tension or curiosity
 
-Return ONLY the complete script text with no additional formatting, explanations, or markdown."""
+    3. MAIN NARRATIVE:
+    - BEGINNING: Establish characters, setting, and the initial situation clearly
+    - MIDDLE: Develop escalating tension and conflict with vivid sensory details
+    - END: Provide a satisfying conclusion that resolves the main conflict while potentially leaving some mystery
 
-    # Get enhanced story
+    4. PODCAST OUTRO (30-45 seconds):
+    "That concludes tonight's tale from The Withering Club. If this story kept you up at night, remember to like, share, and subscribe to join our growing community of darkness seekers. Visit our website at witheringclub.com for exclusive content and merchandise. Until next time, remember... the best stories are the ones that follow you home. Sleep well, if you can."
+
+    IMPORTANT GUIDELINES:
+    - Use conversational, intimate tone throughout
+    - Add atmospheric descriptions and sensory details
+    - Build tension progressively
+    - Include psychological elements
+    - Remove any Reddit-specific references
+    - Create vivid imagery through words
+    - Ensure the narrative flows naturally between sections
+    - Make the beginning, middle and end clearly distinguishable
+    - Replace [Host Name] with a fictional host name that fits a horror podcast
+
+    Original Story: {content}
+    Original Title: {title}
+    Source: r/{subreddit}
+
+    Rewrite as a complete Withering Club podcast episode that grips listeners from start to finish.
+    """.format(
+        content=chosen_story.selftext[:7000],
+        title=chosen_story.title,
+        subreddit=chosen_story.subreddit.display_name
+    )
+
+    # Get enhanced story from Gemini Flash
     enhanced_story = client.models.generate_content(
         model="gemini-2.0-flash",
-        contents=enhancement_prompt.format(content=chosen_story.selftext)
+        contents=enhancement_prompt
     ).text
 
-    # Clean up the enhanced story
-    enhanced_story = enhanced_story.strip()
-    
+    # Clean up the enhanced story to remove any markdown or formatting
+    enhanced_story = re.sub(r'#.*?\n', '', enhanced_story)  # Remove headers
+    enhanced_story = re.sub(r'\*\*.*?\*\*', '', enhanced_story)  # Remove bold
+    enhanced_story = re.sub(r'\*.*?\*', '', enhanced_story)  # Remove italics
+    enhanced_story = re.sub(r'\n\s*\n\s*\n', '\n\n', enhanced_story)  # Fix spacing
+
     return {
         'title': chosen_story.title,
         'original': chosen_story.selftext,
-        'enhanced': enhanced_story,
+        'enhanced': enhanced_story.strip(),
         'subreddit': chosen_story.subreddit.display_name,
         'story_id': chosen_story.id
     }
 
-story_data = fetch_and_enhance_nosleep_story()
+
+story_data = fetch_and_enhance_nosleep_story() # The indentation of this line was fixed to align with the function definition.
 print(story_data['enhanced'])
+
+
 
 # ===== CELL 7: VOICE OVER SCRIPT GENERATION =====
 def generate_voice_over_script(story_text):
@@ -174,8 +222,10 @@ def generate_voice_over_script(story_text):
     return story_text
 
 # Example usage:
-voice_over_script = generate_voice_over_script(story_data['enhanced'])
+voice_over_script = generate_voice_over_script(story_data['enhanced']) # Removed the extra space at the beginning of the line.
 print(voice_over_script)
+
+
 
 # ===== CELL 8: AUTOMATED VOICE OVER GENERATION =====
 import numpy as np
@@ -190,11 +240,13 @@ def generate_horror_audio(story_text, output_dir="audio_output"):
     # Initialize pipeline with horror-optimized settings
     pipeline = KPipeline(lang_code='a')
 
-    # Use user-selected voice parameters
+    # Professional voice parameters for horror narration
     generator = pipeline(
         story_text,
-        voice=user_prefs['voice_selection']['value'],
-        speed=user_prefs['voice_speed']['value']
+        voice='af_bella',  # Special horror-optimized voice
+        speed=0.85,             # Slower pace for tension building
+
+
     )
 
     # Generate and concatenate audio segments
@@ -208,7 +260,7 @@ def generate_horror_audio(story_text, output_dir="audio_output"):
     return output_path
 
 # Example usage:
-audio_path = generate_horror_audio(story_data['enhanced'])
+#audio_path = generate_horror_audio(story_data['enhanced'])
 
 # ===== CELL 9: SUBTITLE GENERATION =====
 from transformers import pipeline
@@ -238,111 +290,111 @@ def generate_subtitles(audio_path, output_dir="subtitles"):
     return srt_path
 
 # Example usage:
-srt_path = generate_subtitles(audio_path)
+#srt_path = generate_subtitles(audio_path)
 
 # ===== CELL 9.1: ENHANCED SCENE DESCRIPTION GENERATION =====
 def parse_srt_timestamps(srt_path):
     """Parse SRT file and extract timestamps with text"""
     segments = []
     current_segment = {}
-    
+
     with open(srt_path, 'r', encoding='utf-8') as file:
         lines = file.readlines()
-        
+
     i = 0
     while i < len(lines):
         line = lines[i].strip()
-        
+
         if line.isdigit():  # Segment number
             if current_segment:
                 segments.append(current_segment)
                 current_segment = {}
-            
+
             i += 1
             # Parse timestamp line
             timestamp_line = lines[i].strip()
             start_time, end_time = timestamp_line.split(' --> ')
-            
+
             i += 1
             # Get text (may be multiple lines)
             text = []
             while i < len(lines) and lines[i].strip():
                 text.append(lines[i].strip())
                 i += 1
-                
+
             current_segment = {
                 'start_time': start_time,
                 'end_time': end_time,
                 'text': ' '.join(text)
             }
         i += 1
-        
+
     if current_segment:
         segments.append(current_segment)
-        
+
     return segments
 
 def generate_scene_descriptions(srt_path, delay_seconds=2):
     """Generate cinematic scene descriptions based on subtitle segments"""
     segments = parse_srt_timestamps(srt_path)
     scene_descriptions = []
-    
+
     chunk_size = 2
     max_retries = 3
-    
+
     for i in range(0, len(segments) - chunk_size + 1, chunk_size):
         chunk = segments[i:i + chunk_size]
         combined_text = ' '.join([seg['text'] for seg in chunk])
-        
+
         # Enhanced prompt focusing on visual storytelling and scenario creation
         prompt = f"""
         You are a horror film director. Create a vivid, cinematic scene description for this segment of narration.
-        
+
         NARRATION: "{combined_text}"
-        
+
         Imagine this as a specific moment in a horror film. Describe:
         1. The exact visual scenario that would be filmed (not abstract concepts)
         2. Characters' positions, expressions, and actions
         3. Setting details including lighting, weather, and environment
         4. Camera angle and framing (close-up, wide shot, etc.)
         5. Color palette and visual tone
-        
+
         IMPORTANT:
         - Describe a SINGLE, SPECIFIC moment that could be photographed
         - Focus on what the VIEWER SEES, not what characters think or feel
         - Include specific visual details that create atmosphere
         - Avoid vague descriptions - be concrete and filmable
         - Write in present tense as if describing a film frame
-        
+
         Example: "A woman stands in her dimly lit kitchen, gripping a bloodstained knife. Her face is illuminated only by moonlight streaming through venetian blinds, casting striped shadows across her vengeful expression. In the background, shadowy figures can be seen through a doorway, unaware of her presence. The camera frames her in a low-angle shot, emphasizing her newfound power."
-        
+
         Return ONLY the scene description, no explanations or formatting.
         """
-        
+
         for attempt in range(max_retries):
             try:
                 response = client.models.generate_content(
                     model="gemini-2.0-flash",
                     contents=prompt
                 ).text
-                
+
                 # Clean up the response
                 cleaned_response = (response
                     .replace('**', '')
                     .replace('Scene:', '')
                     .replace('Description:', '')
                     .strip())
-                
+
                 scene_descriptions.append({
                     'start_time': chunk[0]['start_time'],
                     'end_time': chunk[-1]['end_time'],
                     'description': cleaned_response
                 })
-                
+
                 print(f"Generated scene {len(scene_descriptions)}/{(len(segments) - chunk_size + 1)//chunk_size + 1}")
                 time.sleep(delay_seconds)
                 break
-                
+
             except Exception as e:
                 if "429" in str(e):  # Rate limit error
                     if attempt < max_retries - 1:
@@ -360,8 +412,9 @@ def generate_scene_descriptions(srt_path, delay_seconds=2):
                 else:
                     print(f"Error generating scene {len(scene_descriptions) + 1}: {str(e)}")
                     break
-    
+
     return scene_descriptions
+
 
 # ===== CELL 10: ENHANCED IMAGE PROMPT GENERATION =====
 
@@ -382,34 +435,34 @@ def generate_image_prompts(scene_descriptions, style="cinematic", delay_seconds=
     prompts = []
     style_desc = STYLE_GUIDANCE.get(style, STYLE_GUIDANCE["cinematic"])
     max_retries = 3
-    
+
     print(f"\nGenerating {len(scene_descriptions)} image prompts...")
-    
+
     for i, scene in enumerate(scene_descriptions):
         prompt_template = f"""
         You are a professional concept artist for horror films. Create a detailed image prompt for Stable Diffusion XL based on this scene description.
-        
+
         SCENE DESCRIPTION: "{scene['description']}"
-        
+
         Your task is to translate this scene into a precise, visual prompt that will generate a striking horror image.
-        
+
         Follow these requirements:
         1. Start with the main subject and their action (e.g., "A pale woman clutching a bloodied photograph")
         2. Describe the exact setting with specific details (e.g., "in an abandoned Victorian nursery with peeling wallpaper")
         3. Specify lighting, atmosphere, and color palette (e.g., "lit only by a single candle, casting long shadows, desaturated blue tones")
         4. Include camera perspective and framing (e.g., "extreme close-up shot, shallow depth of field")
         5. Add these style elements: {style_desc}
-        
+
         IMPORTANT:
         - Be extremely specific and visual - describe exactly what should appear in the image
         - Focus on a single, powerful moment that tells a story
         - Include precise details about expressions, positioning, and environment
         - Use strong visual language that creates mood and atmosphere
         - Keep the prompt under 400 characters but dense with visual information
-        
+
         Return ONLY the prompt text with no explanations or formatting.
         """
-        
+
         # Attempt to generate prompt with retries and delay
         for attempt in range(max_retries):
             try:
@@ -418,20 +471,20 @@ def generate_image_prompts(scene_descriptions, style="cinematic", delay_seconds=
                     model="gemini-2.0-flash",
                     contents=prompt_template
                 ).text
-                
+
                 # Enhance the prompt with standard terms
                 enhanced_prompt = enhance_prompt(response.strip())
-                
+
                 prompts.append({
                     'timing': (scene['start_time'], scene['end_time']),
                     'prompt': enhanced_prompt,
                     'original_description': scene['description']  # Store original for reference
                 })
-                
+
                 print(f"Generated prompt {i+1}/{len(scene_descriptions)}")
                 time.sleep(delay_seconds)  # Add delay between requests
                 break
-                
+
             except Exception as e:
                 if "429" in str(e):  # Resource exhausted error
                     if attempt < max_retries - 1:
@@ -450,30 +503,40 @@ def generate_image_prompts(scene_descriptions, style="cinematic", delay_seconds=
                 else:
                     print(f"Error generating prompt {i+1}: {str(e)}")
                     break
-    
+
     return prompts
 
+
 # ===== CELL 11: STABLE DIFFUSION INITIALIZATION      =====
+
 
 from diffusers import StableDiffusionXLPipeline
 import torch
 
 def initialize_stable_diffusion():
-    """Initialize Stable Diffusion XL pipeline"""
+    """Initialize the Stable Diffusion XL model"""
     global sd_pipeline
 
-    # Load SDXL model
+    # Load Stable Diffusion XL pipeline
+    model_id = "stabilityai/stable-diffusion-xl-base-1.0"
     sd_pipeline = StableDiffusionXLPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
+        model_id,
         torch_dtype=torch.float16,
-        variant="fp16",
         use_safetensors=True
-    ).to("cuda")
-    
-    print("Stable Diffusion XL pipeline initialized successfully")
+    )
+
+    # Enable attention slicing for better memory efficiency
+    sd_pipeline.enable_attention_slicing()
+
+    # Move to GPU if available
+    if torch.cuda.is_available():
+        sd_pipeline = sd_pipeline.to("cuda")
+
+    print("✅ Stable Diffusion XL model initialized")
     return sd_pipeline
 
-initialize_stable_diffusion()
+
+#initialize_stable_diffusion()
 
 # ===== CELL 12: ENHANCED STABLE DIFFUSION IMAGE GENERATION =====
 
@@ -488,10 +551,10 @@ def auto_generate_image(prompt):
     global sd_pipeline
 
     # Ensure pipeline is initialized
-    if 'sd_pipeline' not in globals() or sd_pipeline is None:
+    if sd_pipeline is None:
         print("Initializing Stable Diffusion pipeline...")
         initialize_stable_diffusion()
-    
+
     # Set optimal scheduler for SDXL
     sd_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
         sd_pipeline.scheduler.config,
@@ -507,14 +570,14 @@ def auto_generate_image(prompt):
         "logo, oversaturated, cartoon, 3d render, bad art, amateur, "
         "poorly drawn face, poorly drawn hands, poorly drawn feet"
     )
-    
+
     # Generate a random seed for variety but allow reproducibility
     seed = random.randint(1, 2147483647)
     torch_generator = torch.Generator(device="cuda").manual_seed(seed)
-    
+
     # Aspect ratios optimized for SDXL (using 3:2 for cinematic look)
     width, height = 1024, 680  # 3:2 aspect ratio, optimized for SDXL
-    
+
     # Optimal inference parameters based on SDXL guide
     image = sd_pipeline(
         prompt=prompt,
@@ -530,54 +593,39 @@ def auto_generate_image(prompt):
     print(f"Image generated with seed: {seed}")
     return image
 
-def generate_story_images(image_prompts=None, output_dir="auto_images"):
+def generate_story_images(image_prompts, output_dir="auto_images"):
     """Generate high-quality images from prompts with advanced settings"""
-    # Check if image_prompts is provided, if not, try to use the global variable
-    if image_prompts is None:
-        # Try to access the global variable if it exists
-        if 'image_prompts' in globals():
-            image_prompts = globals()['image_prompts']
-        else:
-            # Try to generate image prompts from scene descriptions if available
-            if 'scene_descriptions' in globals() and scene_descriptions:
-                print("No image prompts found. Generating from scene descriptions...")
-                from pipeline import generate_image_prompts
-                image_prompts = generate_image_prompts(scene_descriptions)
-            else:
-                raise ValueError("No image prompts or scene descriptions found. Run cells 9.1 and 10 first.")
-
     # Auto-create output directory
     os.makedirs(output_dir, exist_ok=True)
 
     # Generate images with progress bar
     image_paths = []
     print(f"\nGenerating {len(image_prompts)} cinematic images...")
-    
+
     for idx, prompt_data in enumerate(image_prompts, 1):
         output_path = os.path.join(output_dir, f"scene_{idx:03d}.png")
-        
-        # Always generate new images, overwriting existing ones
+
         # Generate image with multiple attempts if needed
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
                 # Extract the original prompt without enhancements to avoid redundancy
                 base_prompt = prompt_data['prompt']
-                
+
                 # Create a cinematic prompt with optimal structure
                 cinematic_prompt = (
                     f"{base_prompt}, cinematic lighting, dramatic composition, "
                     f"professional photography, film grain, anamorphic lens, "
                     f"depth of field, 8k resolution, hyperdetailed, masterpiece"
                 )
-                
+
                 # Generate the image
                 image = auto_generate_image(cinematic_prompt)
-                
+
                 # Save in high quality
                 image.save(output_path, format="PNG", quality=100)
                 image_paths.append(output_path)
-                
+
                 print(f"Generated image {idx}/{len(image_prompts)} (Attempt {attempt + 1})")
                 break
             except Exception as e:
@@ -586,33 +634,13 @@ def generate_story_images(image_prompts=None, output_dir="auto_images"):
                 else:
                     print(f"Attempt {attempt + 1} failed, retrying...")
                     time.sleep(2)
-    
+
     print(f"\nSuccessfully generated {len(image_paths)} cinematic images")
-    
-    # Save the image_paths to a global variable for use in other cells
-    globals()['image_paths'] = image_paths
-    
     return image_paths
 
-# If running this cell directly, check if we need to generate image prompts first
-if __name__ == "__main__":
-    # Check if we have scene descriptions but no image prompts
-    if ('scene_descriptions' in globals() and scene_descriptions and 
-        ('image_prompts' not in globals() or not image_prompts)):
-        print("Generating image prompts from scene descriptions...")
-        from pipeline import generate_image_prompts
-        image_prompts = generate_image_prompts(scene_descriptions)
-    
-    # Check if we have image prompts
-    if 'image_prompts' in globals() and image_prompts:
-        # Initialize SD if not already done
-        if 'sd_pipeline' not in globals() or sd_pipeline is None:
-            initialize_stable_diffusion()
+# Generate images using existing prompts from cell 10
+image_paths = generate_story_images(image_prompts)
 
-        # Generate images
-        image_paths = generate_story_images(image_prompts)
-    else:
-        print("No image prompts found. Make sure to run cells 9.1 and 10 first.")
 
 # ===== CELL 13: ENHANCED CINEMATIC VIDEO GENERATION =====
 
@@ -627,7 +655,22 @@ from typing import List, Optional
 import sys
 import contextlib
 import random
-import traceback
+
+# Configure ImageMagick
+try:
+    from moviepy.config import change_settings
+    change_settings({"IMAGEMAGICK_BINARY": "convert"})
+except:
+    possible_paths = [
+        "C:\\Program Files\\ImageMagick-7.0.10-Q16\\convert.exe",
+        "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\convert.exe",
+        "/usr/bin/convert",
+        "convert"
+    ]
+    for path in possible_paths:
+        if os.path.exists(path):
+            change_settings({"IMAGEMAGICK_BINARY": path})
+            break
 
 def db_to_amplitude(db: float) -> float:
     """Convert decibels to amplitude ratio"""
@@ -635,428 +678,227 @@ def db_to_amplitude(db: float) -> float:
 
 def convert_timestamp_to_seconds(timestamp):
     """Convert SRT timestamp to seconds"""
-    try:
-        hours, minutes, seconds = timestamp.replace(',', '.').split(':')
-        return float(hours) * 3600 + float(minutes) * 60 + float(seconds)
-    except Exception as e:
-        print(f"Error converting timestamp {timestamp}: {str(e)}")
-        # Return a default value if conversion fails
-        return 0.0
+    hours, minutes, seconds = timestamp.replace(',', '.').split(':')
+    return float(hours) * 3600 + float(minutes) * 60 + float(seconds)
 
 # Constants for optimization
 BATCH_SIZE = 2
 MAX_DIMENSION = 1920
 JPEG_QUALITY = 85
 TRANSITION_DURATION = 1.0
-CINEMATIC_RATIO = 16/9  # Changed to 16:9 aspect ratio
+CINEMATIC_RATIO = 2.35  # Cinematic aspect ratio (21:9)
+
+@contextlib.contextmanager
+def suppress_output():
+    """Suppress output temporarily."""
+    with open(os.devnull, 'w') as devnull:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        try:
+            sys.stdout = devnull
+            sys.stderr = devnull
+            yield
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 def add_cinematic_black_bars(clip):
     """Add cinematic black bars to create widescreen look"""
-    try:
-        # Calculate the height of black bars to achieve cinematic aspect ratio
-        original_height = clip.h
-        original_width = clip.w
-        target_height = int(original_width / CINEMATIC_RATIO)
-        bar_height = (original_height - target_height) // 2
-        
-        # Create black bars
-        if bar_height > 0:
-            # Create a black background
-            black_bg = ColorClip(size=(original_width, original_height), 
-                              color=(0, 0, 0)).set_duration(clip.duration)
-            
-            # Resize the original clip
-            resized_clip = clip.resize(height=target_height)
-            
-            # Position the resized clip in the center
-            positioned_clip = resized_clip.set_position(('center', 'center'))
-            
-            # Composite the clips
-            return CompositeVideoClip([black_bg, positioned_clip])
-        return clip
-    except Exception as e:
-        print(f"Warning: Could not add black bars: {str(e)}")
-        # Return original clip if there's an error
-        return clip
+    # Calculate the height of black bars to achieve cinematic aspect ratio
+    original_height = clip.h
+    original_width = clip.w
+    target_height = int(original_width / CINEMATIC_RATIO)
+    bar_height = (original_height - target_height) // 2
 
-def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=None, ambient_path=None):
-    """Create cinematic video with user-selected preferences"""
+    # Create black bars
+    if bar_height > 0:
+        # Create a mask for the visible area
+        mask = ColorClip(size=(original_width, target_height),
+                         color=(255, 255, 255))
+        mask = mask.set_position(('center', 'center')).set_duration(clip.duration)
+
+        # Apply the mask to create letterboxed effect
+        return CompositeVideoClip([
+            ColorClip(size=(original_width, original_height), color=(0, 0, 0)).set_duration(clip.duration),
+            clip.set_position(('center', 'center')).set_mask(mask)
+        ])
+    return clip
+
+def create_final_video(image_prompts, image_paths, audio_path, title, srt_path=None):
+    """Create cinematic video with dust overlay, black bars, and subtle image movements"""
     try:
         print("Starting enhanced cinematic video creation...")
-        
+
         # Create output directory if it doesn't exist
         output_dir = "/content/output"
         os.makedirs(output_dir, exist_ok=True)
-        
-        # Validate inputs
-        if not image_paths or len(image_paths) == 0:
-            raise ValueError("No image paths provided")
-        
-        if not os.path.exists(audio_path):
-            raise ValueError(f"Audio file not found: {audio_path}")
-        
-        # Filter out non-existent image paths
-        valid_image_paths = []
-        valid_prompts = []
-        for i, (prompt, path) in enumerate(zip(image_prompts, image_paths)):
-            if os.path.exists(path):
-                valid_image_paths.append(path)
-                valid_prompts.append(prompt)
-            else:
-                print(f"Warning: Image file not found: {path}")
-        
-        if not valid_image_paths:
-            raise ValueError("No valid image files found")
-        
+
         # Get audio duration
-        try:
-            audio = AudioFileClip(audio_path)
-            total_duration = audio.duration
-            print(f"Audio duration: {total_duration:.2f} seconds")
-        except Exception as e:
-            print(f"Error loading audio: {str(e)}")
-            raise
-        
-        # Try to load dust overlay (using .mp4 instead of .mov)
+        audio = AudioFileClip(audio_path)
+        total_duration = audio.duration
+
+        # Check for dust overlay video
         dust_overlay = None
-        overlay_path = "/content/overlay.mp4"  # Changed from overlay.mov to overlay.mp4
-        if os.path.exists(overlay_path):
+        dust_overlay_path = "dustoverlay.mov"
+        if os.path.exists(dust_overlay_path):
             try:
                 print("Loading dust overlay effect...")
-                dust_overlay = VideoFileClip(overlay_path, audio=False).loop(total_duration)
-                # Make sure the dust overlay is properly sized
-                dust_overlay = dust_overlay.resize(width=1920, height=1080)
-                print("Dust overlay loaded successfully")
+                dust_overlay = VideoFileClip(dust_overlay_path, has_mask=True)
+                # Loop if needed to match total duration
+                if dust_overlay.duration < total_duration:
+                    dust_overlay = vfx.loop(dust_overlay, duration=total_duration)
+                else:
+                    dust_overlay = dust_overlay.subclip(0, total_duration)
             except Exception as e:
                 print(f"Warning: Could not load dust overlay: {str(e)}")
-                # Try downloading a dust overlay if it doesn't exist
-                try:
-                    import requests
-                    print("Attempting to download a dust overlay...")
-                    # This is a placeholder URL - you would need a real dust overlay video URL
-                    overlay_url = "https://example.com/dust_overlay.mp4"
-                    response = requests.get(overlay_url)
-                    if response.status_code == 200:
-                        with open(overlay_path, 'wb') as f:
-                            f.write(response.content)
-                        dust_overlay = VideoFileClip(overlay_path, audio=False).loop(total_duration)
-                        dust_overlay = dust_overlay.resize(width=1920, height=1080)
-                        print("Downloaded and loaded dust overlay")
-                except Exception as download_error:
-                    print(f"Could not download dust overlay: {str(download_error)}")
+                dust_overlay = None
         else:
-            print("Dust overlay file not found at: " + overlay_path)
-            print("Creating a simple dust overlay effect...")
-            try:
-                # Create a simple dust overlay as a fallback
-                from PIL import Image, ImageDraw
-                import numpy as np
-                import tempfile
-                
-                # Create a temporary file for the overlay
-                temp_overlay_path = os.path.join(tempfile.gettempdir(), "simple_dust.png")
-                
-                # Create a simple dust texture
-                img = Image.new('RGBA', (1920, 1080), (0, 0, 0, 0))
-                draw = ImageDraw.Draw(img)
-                
-                # Add random dust particles
-                for _ in range(1000):
-                    x = random.randint(0, 1920)
-                    y = random.randint(0, 1080)
-                    size = random.randint(1, 3)
-                    opacity = random.randint(50, 150)
-                    draw.ellipse((x, y, x+size, y+size), fill=(255, 255, 255, opacity))
-                
-                img.save(temp_overlay_path)
-                
-                # Create a clip from the image
-                dust_img = ImageClip(temp_overlay_path).set_duration(total_duration)
-                dust_overlay = dust_img.resize(width=1920, height=1080)
-                print("Created simple dust overlay effect")
-            except Exception as e:
-                print(f"Could not create simple dust overlay: {str(e)}")
-        
-        # Create clips from images with their specific timings and fill screen
+            print("Dust overlay file not found, continuing without it...")
+
+        # Create clips from images with their specific timings and subtle movements
         video_clips = []
-        
-        print(f"Processing {len(valid_image_paths)} images...")
-        for i, (prompt_data, img_path) in enumerate(zip(valid_prompts, valid_image_paths)):
-            try:
-                # Get timing from prompt data
-                start_time = convert_timestamp_to_seconds(prompt_data['timing'][0])
-                end_time = convert_timestamp_to_seconds(prompt_data['timing'][1])
-                duration = max(end_time - start_time, 1.0)  # Ensure minimum duration
-                
-                # Add random subtle tilt/rotation to image
-                tilt_angle = random.uniform(-2.0, 2.0)  # Random tilt between -2 and 2 degrees
-                zoom_factor = random.uniform(1.02, 1.08)  # Random zoom between 2-8%
-                
-                # Create clip with subtle zoom and rotation
-                img = ImageClip(img_path)
-                
-                # Ensure image fills the screen (16:9 aspect ratio)
-                target_width = 1920
-                target_height = 1080
-                
-                # Calculate dimensions to fill screen while maintaining aspect ratio
-                img_aspect = img.w / img.h
-                screen_aspect = target_width / target_height
-                
-                if img_aspect > screen_aspect:  # Image is wider than screen
-                    new_height = target_height
-                    new_width = int(new_height * img_aspect)
-                else:  # Image is taller than screen
-                    new_width = target_width
-                    new_height = int(new_width / img_aspect)
-                
-                # Resize to fill screen
-                img = img.resize(width=new_width, height=new_height)
-                
-                clip = (img
+
+        for i, (prompt_data, img_path) in enumerate(zip(image_prompts, image_paths)):
+            if not os.path.exists(img_path):
+                continue
+
+            # Get timing from prompt data
+            start_time = convert_timestamp_to_seconds(prompt_data['timing'][0])
+            end_time = convert_timestamp_to_seconds(prompt_data['timing'][1])
+            duration = end_time - start_time
+
+            # Add random subtle tilt/rotation to image
+            tilt_angle = random.uniform(-2.0, 2.0)  # Random tilt between -2 and 2 degrees
+            zoom_factor = random.uniform(1.02, 1.08)  # Random zoom between 2-8%
+
+            # Create clip with subtle zoom and rotation
+            clip = (ImageClip(img_path)
                    .set_duration(duration)
                    .set_start(start_time)
                    .resize(lambda t: zoom_factor + (0.1 * t/duration))  # Combine base zoom with gradual zoom
                    .rotate(lambda t: tilt_angle, expand=False)  # Apply subtle tilt
-                   .set_position('center'))  # Ensure image is centered
-                
-                video_clips.append(clip)
-                print(f"Processed image {i+1}/{len(valid_image_paths)}")
-            except Exception as e:
-                print(f"Error processing image {i+1}: {str(e)}")
-                # Continue with next image
-        
-        if not video_clips:
-            raise ValueError("No video clips could be created from images")
+                   .set_position('center'))
+
+            video_clips.append(clip)
 
         # Add transitions between clips
         final_clips = []
         for i, clip in enumerate(video_clips):
-            try:
-                if i > 0:
-                    # Add crossfade with previous clip
-                    clip = clip.crossfadein(min(1.0, clip.duration/2))
-                final_clips.append(clip)
-            except Exception as e:
-                print(f"Error adding transition to clip {i+1}: {str(e)}")
-                final_clips.append(clip)  # Add without transition
+            if i > 0:
+                # Add crossfade with previous clip
+                clip = clip.crossfadein(1.0)
+            final_clips.append(clip)
 
         # Combine all clips
         print("Combining video clips...")
-        try:
-            video = CompositeVideoClip(final_clips)
-            # Resize to standard 16:9 resolution
-            video = video.resize(width=1920, height=1080)
-        except Exception as e:
-            print(f"Error combining clips: {str(e)}")
-            # Try a simpler approach if composite fails
-            if len(final_clips) > 0:
-                video = concatenate_videoclips(final_clips, method="compose")
-                video = video.resize(width=1920, height=1080)
-            else:
-                raise ValueError("No clips to combine")
-        
-        # Use user-selected video quality
-        video_bitrate = user_prefs['video_quality']['value']
-        
-        # Use user-selected aspect ratio
-        CINEMATIC_RATIO = user_prefs['cinematic_ratio']['value']
-        
-        # Add subtitles if available - FIXED IMPLEMENTATION
-        subtitle_clip = None
+        video = CompositeVideoClip(final_clips).resize(width=1920, height=1080)
+
+        # Add dust overlay if available (using screen blend mode)
+        if dust_overlay is not None:
+            print("Applying dust overlay effect...")
+            # Resize overlay to match video dimensions
+            dust_overlay = dust_overlay.resize(video.size)
+            # Apply screen blend mode
+            video = CompositeVideoClip([
+                video,
+                dust_overlay.set_blend_mode("screen")
+            ])
+
+        # Add cinematic black bars
+        print("Adding cinematic letterboxing...")
+        video = add_cinematic_black_bars(video)
+
+        # Add subtitles if available
         if srt_path and os.path.exists(srt_path):
             try:
-                print("Adding subtitles from: " + srt_path)
-                
-                # First try to use a better font for subtitles
-                subtitle_font = 'Arial-Bold'  # Default fallback
-                
-                # Try to find a better font on the system
+                # First try to download and use the Anton font
                 try:
-                    import matplotlib.font_manager as fm
-                    fonts = fm.findSystemFonts()
-                    for font in fonts:
-                        if 'arial' in font.lower() and 'bold' in font.lower():
-                            subtitle_font = font
-                            break
-                    print(f"Using font: {subtitle_font}")
-                except Exception as font_error:
-                    print(f"Could not find system fonts: {str(font_error)}")
-                
-                # Create subtitle generator with improved settings
+                    import requests
+                    import tempfile
+
+                    # Download Anton font
+                    font_url = "https://fonts.gstatic.com/s/anton/v23/1Ptgg87LROyAm3Kz-C8.woff2"
+                    font_path = os.path.join(tempfile.gettempdir(), "Anton-Regular.woff2")
+
+                    # Download the font file if it doesn't exist
+                    if not os.path.exists(font_path):
+                        print("Downloading Anton font...")
+                        response = requests.get(font_url)
+                        with open(font_path, 'wb') as f:
+                            f.write(response.content)
+                        print("Font downloaded successfully")
+
+                    # Use the downloaded font
+                    subtitle_font = font_path
+                    print("Using Anton font for subtitles")
+                except Exception as e:
+                    print(f"Could not download Anton font: {str(e)}, using default font")
+                    subtitle_font = 'Arial-Bold'
+
+                # Create subtitle generator with the Anton font
                 generator = lambda txt: TextClip(
                     txt,
                     font=subtitle_font,
-                    fontsize=40,  # Larger size for better visibility
+                    fontsize=54,  # Larger size for Anton font
                     color='white',
                     stroke_color='black',
-                    stroke_width=2,  # Thicker stroke for better visibility
+                    stroke_width=3,  # Thicker stroke for better visibility
                     method='caption',
-                    size=(video.w * 0.8, None),  # Wider text area
+                    size=(video.w * 0.7, None),  # Wider text area for Anton
                     align='center'
                 )
-                
-                # Create the subtitles clip
-                subtitle_clip = SubtitlesClip(srt_path, generator)
-                
-                # Set the position to bottom center with padding
-                subtitle_clip = subtitle_clip.set_position(('center', 0.85), relative=True)
-                
-                print("Subtitles added successfully")
-            except Exception as e:
-                print(f"Error adding subtitles: {str(e)}")
-                traceback.print_exc()  # Print detailed error information
-        
-        # Create a list of clips to composite
-        clips_to_composite = [video]
-        
-        # Add subtitle clip if available
-        if subtitle_clip is not None:
-            clips_to_composite.append(subtitle_clip)
-        
-        # Apply dust overlay based on user preference
-        if user_prefs['use_dust_overlay']['value'] and dust_overlay is not None:
-            try:
-                print("Applying dust overlay effect...")
-                # Make sure dust overlay matches video dimensions
-                dust_overlay = dust_overlay.resize(video.size)
-                # Add dust overlay with screen blend mode for better visibility
-                clips_to_composite.append(dust_overlay.set_opacity(0.3).set_blend_mode("screen"))
-                print("Dust overlay applied successfully")
-            except Exception as e:
-                print(f"Error applying dust overlay: {str(e)}")
-                traceback.print_exc()
-        
-        # Composite all clips together
-        try:
-            print(f"Compositing {len(clips_to_composite)} clips together...")
-            video = CompositeVideoClip(clips_to_composite)
-        except Exception as e:
-            print(f"Error in final composition: {str(e)}")
-            traceback.print_exc()
-        
-        # Add ambient soundscape if available
-        if ambient_path and os.path.exists(ambient_path):
-            try:
-                print("Adding ambient sound design...")
-                ambient_audio = AudioFileClip(ambient_path)
-                
-                # Ensure ambient audio matches narration duration
-                if ambient_audio.duration < total_duration:
-                    ambient_audio = afx.audio_loop(ambient_audio, duration=total_duration)
-                else:
-                    ambient_audio = ambient_audio.subclip(0, total_duration)
-                
-                # Mix ambient sounds with narration (ambient at lower volume)
-                ambient_audio = ambient_audio.volumex(db_to_amplitude(-15))  # Lower volume for ambient
 
-                # Add background music if available
-                if os.path.exists("/content/ambient.mp3"):
-                    bg_music = (AudioFileClip("/content/ambient.mp3")
-                              .volumex(db_to_amplitude(BG_MUSIC_DB)))
-                    
-                    if bg_music.duration < total_duration:
-                        bg_music = afx.audio_loop(bg_music, duration=total_duration)
-                    else:
-                        bg_music = bg_music.subclip(0, total_duration)
-                    
-                    final_audio = CompositeAudioClip([audio, ambient_audio, bg_music])
-                else:
-                    final_audio = CompositeAudioClip([audio, ambient_audio])
+                subs = SubtitlesClip(srt_path, generator)
+                video = CompositeVideoClip([
+                    video,
+                    subs.set_position(('center', 'bottom'))  # Position at bottom for better visibility
+                ])
             except Exception as e:
-                print(f"Warning: Could not add ambient sound: {str(e)}")
-                final_audio = audio
+                print(f"Warning: Could not add subtitles: {str(e)}")
+
+        # Add background music if available
+        if os.path.exists("/content/ambient.mp3"):
+            bg_music = (AudioFileClip("/content/ambient.mp3")
+                       .volumex(db_to_amplitude(BG_MUSIC_DB)))
+
+            if bg_music.duration < total_duration:
+                bg_music = afx.audio_loop(bg_music, duration=total_duration)
+            else:
+                bg_music = bg_music.subclip(0, total_duration)
+
+            final_audio = CompositeAudioClip([audio, bg_music])
         else:
-            # Original audio handling code
-            try:
-                if os.path.exists("/content/ambient.mp3"):
-                    bg_music = (AudioFileClip("/content/ambient.mp3")
-                               .volumex(db_to_amplitude(BG_MUSIC_DB)))
-                    
-                    if bg_music.duration < total_duration:
-                        bg_music = afx.audio_loop(bg_music, duration=total_duration)
-                    else:
-                        bg_music = bg_music.subclip(0, total_duration)
-                    
-                    final_audio = CompositeAudioClip([audio, bg_music])
-                else:
-                    final_audio = audio
-            except Exception as e:
-                print(f"Warning: Could not add background music: {str(e)}")
-                final_audio = audio
+            final_audio = audio
 
-        # Set audio to video
-        try:
-            video = video.set_audio(final_audio)
-        except Exception as e:
-            print(f"Warning: Could not set audio: {str(e)}")
-            # Try to continue without audio if it fails
+        video = video.set_audio(final_audio)
 
         # Render final video
         print("Rendering final cinematic video...")
         output_file = os.path.join(output_dir, f"{title}.mp4")
-        
-        try:
-            # Use selected video quality for rendering
-            video.write_videofile(
-                output_file,
-                fps=24,
-                codec='libx264',
-                audio_codec='aac',
-                bitrate=video_bitrate,
-                threads=4,
-                preset='medium',
-                ffmpeg_params=['-crf', '18']
-            )
-        except Exception as e:
-            print(f"Warning: High quality render failed: {str(e)}")
-            print("Trying with more compatible settings...")
-            
-            # Try with more compatible settings
-            try:
-                video.write_videofile(
-                    output_file,
-                    fps=24,
-                    codec='libx264',
-                    audio_codec='aac',
-                    bitrate='4000k',
-                    threads=2,
-                    preset='faster',
-                    ffmpeg_params=['-crf', '23']
-                )
-            except Exception as e2:
-                print(f"Error in video rendering: {str(e2)}")
-                # Try one last time with minimal settings
-                video.write_videofile(
-                    output_file,
-                    fps=24,
-                    codec='libx264',
-                    audio_codec='aac'
-                )
+        video.write_videofile(
+            output_file,
+            fps=24,
+            codec='libx264',
+            audio_codec='aac',
+            bitrate='6000k',  # Higher bitrate for better quality
+            threads=4,
+            preset='medium',  # Better quality preset
+            ffmpeg_params=['-crf', '18']  # Higher quality CRF value
+        )
 
         # Cleanup
-        try:
-            video.close()
-            audio.close()
-            if dust_overlay is not None:
-                dust_overlay.close()
-            if subtitle_clip is not None:
-                subtitle_clip.close()
-            
-            # Force garbage collection
-            gc.collect()
-            
-            print("Cinematic video creation completed successfully.")
-            return output_file
-        except Exception as e:
-            print(f"Warning during cleanup: {str(e)}")
-            return output_file if os.path.exists(output_file) else None
+        video.close()
+        audio.close()
+        if dust_overlay is not None:
+            dust_overlay.close()
+
+        print("Cinematic video creation completed successfully.")
+        return output_file
 
     except Exception as e:
         print(f"Error in video creation: {str(e)}")
-        print("Detailed error information:")
-        traceback.print_exc()
         return None
+
 
 # ===== CELL 14: COMPLETE PIPELINE EXECUTION =====
 
